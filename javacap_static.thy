@@ -62,7 +62,7 @@ inductive wf_expr :: "prog \<Rightarrow> msenv \<Rightarrow> lenv \<Rightarrow> 
         (* Assumption not used: P \<turnstile> t <: t'  *)(* i.e. if t implements t', 
           then it is possible (but definitely not certain) the cast from t' down to t will be 
           possible at runtime. *)
-      | wf_expr_cast: "\<lbrakk> P M \<Gamma> \<turnstile> e : (t',l); P \<turnstile> t <: t';
+      | wf_expr_cast: "\<lbrakk> P M \<Gamma> \<turnstile> e : (t',l);
                         \<not>is_cap_type P t'; \<not>is_cap_type P t \<rbrakk> \<Longrightarrow> P M \<Gamma> \<turnstile> (cast t e) : (t,l)"
       | wf_expr_const: "\<lbrakk> case k of null \<Rightarrow> (\<forall>vt. t \<noteq> (ValT vt)) | num n \<Rightarrow> (t = ValT IntT) \<rbrakk> 
                             \<Longrightarrow> P M \<Gamma> \<turnstile> (const k) : (t,l)"
@@ -229,7 +229,7 @@ qed
 
 lemma wf_expr_cast_intro:
   shows "P M \<Gamma> \<turnstile> (cast tcast e) : (t,\<gamma>) \<Longrightarrow> 
-            \<exists>t'. (P M \<Gamma> \<turnstile> e : (t',\<gamma>)) \<and> (P \<turnstile> tcast <: t') \<and> \<not>is_cap_type P t' \<and> \<not>is_cap_type P tcast \<and> (subsumption P tcast t)"
+            \<exists>t'. (P M \<Gamma> \<turnstile> e : (t',\<gamma>)) \<and> \<not>is_cap_type P t' \<and> \<not>is_cap_type P tcast \<and> (subsumption P tcast t)"
 proof (induction "cast tcast e" "(t,\<gamma>)" arbitrary:t rule:wf_expr.induct)
   case (wf_expr_cast \<Gamma> t')
   then show ?case using subsumption_self by blast

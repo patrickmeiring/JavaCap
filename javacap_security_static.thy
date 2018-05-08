@@ -424,5 +424,4 @@ next
   then show ?case using at_reflexive by simp
 qed
 
-
 end

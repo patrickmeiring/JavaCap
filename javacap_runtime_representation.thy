@@ -150,7 +150,7 @@ lemma transition_ok_trans:
   shows "transition_ok S S2"
   using assms heap_extends_transitive unfolding transition_ok_def by auto
 
-lemma is_value_ok_valid_cast:
+lemma is_value_ok_valid_object_cast:
   assumes ok: "is_value_ok P H T' (href l)"
   assumes heap_access: "(obj::heapobj) = the (H l)"
   assumes cast_valid: "P \<turnstile> (ClassT (HClass obj)) <: (ttype T)"

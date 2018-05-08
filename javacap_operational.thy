@@ -63,9 +63,9 @@ inductive op_expr :: "prog \<Rightarrow> exp \<Rightarrow> State \<Rightarrow> v
                         (except S1 = None \<longrightarrow> retval S1 \<noteq> None); (* added, exception to be thrown otherwise *)
                         v = the (retval S1) \<rbrakk> 
                          \<Longrightarrow> P \<turnstile> \<langle>(calls c mname lbl args) | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S'\<rangle>"
-      (* Assumes casts are only used on objects, not value types (e.g. int) *)
       | op_expr_cast: "\<lbrakk> P \<turnstile> \<langle>e | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S'\<rangle>;
-                       (case v of (href l) \<Rightarrow> (hobj = the (heap S' l)) \<and> (P \<turnstile> (ClassT (HClass hobj)) <: t)) (* Added assumption *) \<rbrakk>
+                       (case v of (href l) \<Rightarrow> (hobj = the (heap S' l)) \<and> (P \<turnstile> (ClassT (HClass hobj)) <: t) 
+                                | (num n) \<Rightarrow> t = ValT IntT ) \<rbrakk>
                             \<Longrightarrow> P \<turnstile> \<langle>(cast t e) | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S'\<rangle>"
       | op_expr_const: "\<lbrakk> (case k of k.null \<Rightarrow> v = v.null | k.num n \<Rightarrow> v = v.num n) \<rbrakk>
                          \<Longrightarrow> P \<turnstile> \<langle>(const k) | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S\<rangle>"
@@ -737,14 +737,14 @@ qed
 lemma preservation_expr_cast:
   assumes op1: "P \<turnstile> \<langle>e | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S'\<rangle>"
   assumes hyp: "\<And>M \<Gamma> T. (P M \<Gamma> \<^bold>\<turnstile> S) \<and> (P M \<Gamma> \<turnstile> e : T) \<longrightarrow> (P M \<Gamma> \<^bold>\<turnstile> S') \<and> transition_ok S S' \<and> is_expr_value_ok P S' T v"
-  assumes op2: "case v of href l \<Rightarrow> hobj = the (heap S' l) \<and> (P \<turnstile> ClassT (HClass hobj) <: tcast)"
+  assumes op2: "case v of href l \<Rightarrow> hobj = the (heap S' l) \<and> (P \<turnstile> ClassT (HClass hobj) <: tcast) | (num n) \<Rightarrow> tcast = ValT IntT"
   assumes corr: "P M \<Gamma> \<^bold>\<turnstile> S"
   assumes wf: "P M \<Gamma> \<turnstile> cast tcast e : T"
   assumes wfp: "wf_prog P"
   shows "(P M \<Gamma> \<^bold>\<turnstile> S') \<and> transition_ok S S' \<and> is_expr_value_ok P S' T v"
 proof -
   define Tcast where "Tcast \<equiv> (tcast, tlabel T)"
-  obtain T' where a1: "(P M \<Gamma> \<turnstile> e : T') \<and> (P \<turnstile> (ttype Tcast) <: (ttype T')) \<and> \<not>is_cap_type P (ttype T') 
+  obtain T' where a1: "(P M \<Gamma> \<turnstile> e : T') \<and> \<not>is_cap_type P (ttype T') 
                       \<and> \<not>is_cap_type P (ttype Tcast) \<and> (subsumption P (ttype Tcast) (ttype T)) \<and> (tlabel T' = tlabel T)" 
     using wf wf_expr_cast_intro Tcast_def by fastforce 
   then have a2: "(P M \<Gamma> \<^bold>\<turnstile> S') \<and> transition_ok S S' \<and> is_expr_value_ok P S' T' v"
@@ -757,18 +757,16 @@ proof -
     moreover have "is_expr_value_ok P S' T' v" using a2 by simp
     moreover have "tlabel Tcast = tlabel T'" using a1 Tcast_def by simp
     ultimately show ?thesis 
-      using is_value_ok_valid_cast a1 b1 a2 intersect_label_label intersect_label_type 
+      using is_value_ok_valid_object_cast a1 b1 a2 intersect_label_label intersect_label_type 
       unfolding is_expr_value_ok_def by metis
   next
     case null
     then show ?thesis unfolding is_expr_value_ok_def by simp
   next
     case (num x3)
-    moreover have "P \<turnstile> (ttype Tcast) <: (ttype T')" using a1 by simp
-    moreover have "tlabel Tcast = tlabel T'" using a1 Tcast_def by simp
-    moreover have "is_expr_value_ok P S' T' v" using a2 by simp
-    ultimately show ?thesis unfolding is_expr_value_ok_def 
-      using subtype_int_parity intersect_label_label intersect_label_type by auto
+    then have "(ttype Tcast) = (ValT IntT)" using op2 Tcast_def by simp
+    then show ?thesis unfolding is_expr_value_ok_def 
+      using num intersect_label_type by auto
   qed
   (* show the value is type-correct to the supertype T by subsumption *)
   then have "is_expr_value_ok P S' T v" 
@@ -1281,7 +1279,7 @@ proof -
     moreover have "\<not>is_cap_type P (ttype TException)"
        unfolding TException_def T_def by fastforce 
     ultimately have "is_value_ok P (heap S1) T ex"
-      using is_value_ok_valid_cast a3 op4 b2 by simp 
+      using is_value_ok_valid_object_cast a3 op4 b2 by simp 
     then have "is_value_ok P (heap S1) (intersect_label T (privs S1)) ex"
       unfolding T_def intersect_label_def by simp
     then have "P M \<Gamma>' \<^bold>\<turnstile> (S1\<lparr> stack := (stack S1)(var \<mapsto> ex)\<rparr>)"
