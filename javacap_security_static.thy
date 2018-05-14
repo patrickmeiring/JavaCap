@@ -239,27 +239,52 @@ qed
 
 lemma allowed_transition_stmt_letin:
   assumes op1: "no_exception_or_return S"
-  assumes op2: "S1 = S\<lparr>stack := stack S(x \<mapsto> v.null)\<rparr>"
-  assumes op3: "S' = S2\<lparr>stack := (stack S2)(x := (stack S x))\<rparr>"
-  assumes op4: "P \<turnstile> \<langle>seq (assign x e) s | S1\<rangle> \<rightarrow>\<^sub>s \<langle>S2\<rangle>" (* unused *)
-  assumes hyp: "\<And>M \<Gamma>. (P M \<Gamma> \<^bold>\<turnstile> S1) \<and> (P M \<Gamma> \<turnstile> seq (assign x e) s \<bullet>) \<and> (privs S1) \<subseteq> \<gamma> \<longrightarrow> allowed_transition P \<gamma> S1 S2"
+  assumes op2: "P \<turnstile> \<langle>e | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S1\<rangle>"
+  assumes op3: "S2 = (if except S1 = None then S1\<lparr>stack := stack S1(x \<mapsto> v)\<rparr> else S1)"
+  assumes op4: "P \<turnstile> \<langle>s | S2\<rangle> \<rightarrow>\<^sub>s \<langle>S3\<rangle>"
+  assumes op5: "S' = S3\<lparr>stack := (stack S3)(x := stack S x)\<rparr>"
+  assumes hype: "\<And>M \<Gamma> T. (P M \<Gamma> \<^bold>\<turnstile> S) \<and> (P M \<Gamma> \<turnstile> e : T) \<and> (privs S) \<subseteq> \<gamma> \<longrightarrow> allowed_transition P \<gamma> S S1"
+  assumes hyps: "\<And>M \<Gamma>. (P M \<Gamma> \<^bold>\<turnstile> S2) \<and> (P M \<Gamma> \<turnstile> s \<bullet>)  \<and> (privs S2) \<subseteq> \<gamma> \<longrightarrow> allowed_transition P \<gamma> S2 S3"
   assumes corr: "P M \<Gamma> \<^bold>\<turnstile> S"
   assumes wf: "P M \<Gamma> \<turnstile> letin T x e s \<bullet>"
+  assumes wfp: "wf_prog P"
   assumes gamma: "(privs S) \<subseteq> \<gamma>"
   shows "allowed_transition P \<gamma> S S'"
-proof -  
-  define \<Gamma>' where "\<Gamma>' = \<Gamma>(x\<mapsto>T)"
-  have a1: "(P M \<Gamma>' \<^bold>\<turnstile> S1)"
-    using corr stack_update_ok \<Gamma>'_def op2 by simp
-  have a2: "(P M \<Gamma>(x := None) \<turnstile> e : T) \<and> (P M \<Gamma>(x\<mapsto>T) \<turnstile> s \<bullet>)"
+proof -
+  have wfi: "(P M \<Gamma> \<turnstile> e : T) \<and> (P M \<Gamma>(x\<mapsto>T) \<turnstile> s \<bullet>)"
     using wf wf_stmt_letin_intro by simp
-  moreover have "(P M \<Gamma>(x\<mapsto>T) \<turnstile> e : T)"
-    using a2 wf_expr_mono_lenv by (metis fun_upd_upd map_add_subsumed2 upd_None_map_le)
-  ultimately have "(P M \<Gamma>' \<turnstile> (seq (assign x e) s) \<bullet>)"
-    using wf_stmt_assign wf_stmt_seq \<Gamma>'_def by simp
-  then have a3: "allowed_transition P \<gamma> S1 S2"
-    using hyp a1 gamma op2 by simp
-  then show ?thesis using op2 op3 at_trans at_stack_update by metis
+  then have "(P M \<Gamma> \<^bold>\<turnstile> S1) \<and> transition_ok S S1 \<and> is_expr_value_ok P S1 T v"
+    using wfp preservation op2 corr by metis
+  (* If the exception did not throw an exception during evaluation, the assignment occurs 
+     and S2 is type-correct to \<Gamma>(x\<mapsto>T). Otherwise the assignment does not occur and we
+     end-up correct to \<Gamma> only. We rely on the fact that the let-in body will not be executed
+     in this case (due to an unhandled exception.)  *)
+  then have a2: "(except S2 = None \<longrightarrow> (P M \<Gamma>(x\<mapsto>T) \<^bold>\<turnstile> S2)) \<and> 
+                 (except S2 \<noteq> None \<longrightarrow> (P M \<Gamma> \<^bold>\<turnstile> S2)) \<and> transition_ok S S2"
+    using preservation_stmt_assign_base op3 by metis
+
+  have a1: "allowed_transition P \<gamma> S S1"
+    using wfi hype corr gamma by blast
+  moreover have "allowed_transition P \<gamma> S1 S2"
+    using op3 at_stack_update at_reflexive by simp
+  moreover have "allowed_transition P \<gamma> S2 S3"
+  proof (cases "except S2")
+    case None
+    then have "(P M \<Gamma>(x \<mapsto> T) \<^bold>\<turnstile> S2) \<and> (privs S2 \<subseteq> \<gamma>)"
+      using a2 gamma unfolding transition_ok_def by simp
+    then show "allowed_transition P \<gamma> S2 S3"
+      using hyps wfi by metis
+  next
+    case (Some a)
+    then have "S2 = S3"
+      using exception_or_return_skips op4 unfolding no_exception_or_return_def by simp
+    then show "allowed_transition P \<gamma> S2 S3"
+      using at_reflexive by simp
+  qed
+  moreover have "allowed_transition P \<gamma> S3 S'"
+    using op5 at_stack_update at_reflexive by simp
+  ultimately show ?thesis 
+    using at_trans by metis
 qed
 
 lemma allowed_transition_stmt_seq:
@@ -402,8 +427,8 @@ next
   case (op_stmt_else S v x s2 S2 s1)
   then show ?case using wf_stmt_ifelse_intro by metis
 next
-  case (op_stmt_letin S S1 x e s S2 S' T)
-  then show ?case using allowed_transition_stmt_letin by metis
+  case (op_stmt_letin S e v S1 S2 x s S3 S' T)
+  then show ?case using allowed_transition_stmt_letin wfp by blast
 next
   case (op_stmt_return S e v S1 S')
   then show ?case using wf_stmt_return_intro at_trans at_retval_update by metis

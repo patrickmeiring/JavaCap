@@ -110,7 +110,7 @@ inductive wf_stmt :: "prog \<Rightarrow> msenv \<Rightarrow> lenv \<Rightarrow> 
                             \<Longrightarrow> P M \<Gamma> \<turnstile> (assignfs c f e) \<bullet>"
       | wf_stmt_expr: "\<lbrakk> P M \<Gamma> \<turnstile> e : T \<rbrakk> \<Longrightarrow> P M \<Gamma> \<turnstile> (expr e) \<bullet>"
       | wf_stmt_ifelse: "\<lbrakk>\<Gamma>\<lbrakk>x\<rbrakk>\<^sub>v = Some ((ValT IntT),l); P M \<Gamma> \<turnstile> s1 \<bullet>; P M \<Gamma> \<turnstile> s2 \<bullet>\<rbrakk> \<Longrightarrow> P M \<Gamma> \<turnstile> (ifelse x s1 s2) \<bullet>"
-      | wf_stmt_letin: "\<lbrakk> P M \<Gamma>(x := None) \<turnstile> e : \<T>; P M \<Gamma>(x\<mapsto>\<T>) \<turnstile> s \<bullet> \<rbrakk>
+      | wf_stmt_letin: "\<lbrakk> P M \<Gamma> \<turnstile> e : \<T>; P M \<Gamma>(x\<mapsto>\<T>) \<turnstile> s \<bullet> \<rbrakk>
                            \<Longrightarrow> P M \<Gamma> \<turnstile> (letin \<T> x e s) \<bullet>"
       | wf_stmt_return: "\<lbrakk> P M \<Gamma> \<turnstile> e : (msreturn M)  \<rbrakk>
                             \<Longrightarrow> P M \<Gamma> \<turnstile> (return e) \<bullet>" (* currently assume runtime check will take care of type-safety *)
@@ -120,43 +120,6 @@ inductive wf_stmt :: "prog \<Rightarrow> msenv \<Rightarrow> lenv \<Rightarrow> 
       | wf_stmt_trycatch: "\<lbrakk> P M \<Gamma> \<turnstile> s \<bullet>; (\<forall>(t,x,s')\<in>(set handlers). (P M \<Gamma>(x\<mapsto>(t,{})) \<turnstile> s' \<bullet>) \<and> \<not>is_cap_type P t) \<rbrakk>
                              \<Longrightarrow> P M \<Gamma> \<turnstile> (trycatch s handlers) \<bullet>"
 
-
-(* Show extending \<Gamma> only ever maintains type-correctness,
-   i.e. expression-type correctness is monotonic over \<Gamma> *)
-lemma wf_expr_mono_lenv:
-  shows "P M \<Gamma> \<turnstile> e : \<T> \<Longrightarrow> P M (\<Gamma>' ++ \<Gamma>) \<turnstile> e : \<T>"
-proof (induction rule:wf_expr.induct)
-  case (wf_expr_ref \<Gamma> x \<T>)
-  then show ?case using wf_expr.wf_expr_ref by simp
-next
-  case (wf_expr_new cname c \<gamma> \<Gamma>)
-  then show ?case using wf_expr.wf_expr_new by simp
-next
-  case (wf_expr_calli \<Gamma> x t0 \<gamma>0 mname decl args Tr)
-  then show ?case using wf_expr.wf_expr_calli unfolding wf_method_call_def by simp
-next
-case (wf_expr_calls c mname decl \<Gamma> args l' Tr)
-  then show ?case using wf_expr.wf_expr_calls unfolding wf_method_call_def by simp
-next
-  case (wf_expr_cast \<Gamma> e t' l t)
-  then show ?case using wf_expr.wf_expr_cast by simp
-next
-  case (wf_expr_const k t \<Gamma> l)
-  then show ?case using wf_expr.wf_expr_const by simp
-next
-  case (wf_expr_fieldacci \<Gamma> x f T)
-  then show ?case using wf_expr.wf_expr_fieldacci unfolding wf_fieldi_access_def
-    by (metis (mono_tags, hide_lams) id_apply map_add_find_right)
-next
-  case (wf_expr_fieldaccs c f T \<Gamma>)
-  then show ?case using wf_expr.wf_expr_fieldaccs by simp
-next
-  case (wf_expr_sub \<Gamma> e t' l t)
-  then show ?case using wf_expr.wf_expr_sub by simp
-next
-  case (wf_expr_wrap \<Gamma> e t' l cbname)
-  then show ?case using wf_expr.wf_expr_wrap by simp
-qed
 
 (* Defines the allowed type-to-type subsumption *)
 definition subsumption :: "prog \<Rightarrow> \<tau> \<Rightarrow> \<tau> \<Rightarrow> bool"
@@ -313,7 +276,7 @@ lemma wf_stmt_ifelse_intro:
 
 lemma wf_stmt_letin_intro:
   assumes "P M \<Gamma> \<turnstile> (letin \<T> x e s) \<bullet>"
-  shows "(P M \<Gamma>(x := None) \<turnstile> e : \<T>) \<and> (P M \<Gamma>(x\<mapsto>\<T>) \<turnstile> s \<bullet>)"
+  shows "(P M \<Gamma> \<turnstile> e : \<T>) \<and> (P M \<Gamma>(x\<mapsto>\<T>) \<turnstile> s \<bullet>)"
   using assms wf_stmt.simps[where ?a2.0 = "letin \<T> x e s"] by auto
 
 lemma wf_stmt_return_intro:

@@ -115,11 +115,12 @@ inductive op_expr :: "prog \<Rightarrow> exp \<Rightarrow> State \<Rightarrow> v
                          P \<turnstile> \<langle>s2 | S\<rangle> \<rightarrow>\<^sub>s \<langle>S2\<rangle> \<rbrakk> \<Longrightarrow>
                          P \<turnstile> \<langle>(ifelse x s1 s2) | S\<rangle> \<rightarrow>\<^sub>s \<langle>S2\<rangle>"
       | op_stmt_letin: "\<lbrakk> no_exception_or_return S; 
-                          S1 = S\<lparr>stack := (stack S)(x\<mapsto>v.null)\<rparr>; (* initialise empty *)
-                          P \<turnstile> \<langle>(seq (assign x e) s) | S1\<rangle> \<rightarrow>\<^sub>s \<langle>S2\<rangle>;
-                          S' = S2\<lparr>stack := (stack S2)(x := (stack S x))\<rparr>
+                           P \<turnstile> \<langle>e | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S1\<rangle>;
+                           S2 = (if except S1 = None then S1\<lparr>stack := (stack S1)(x\<mapsto>v)\<rparr> else S1);
+                           P \<turnstile> \<langle>s | S2\<rangle> \<rightarrow>\<^sub>s \<langle>S3\<rangle>;
+                           S' = S3\<lparr>stack := (stack S3)(x := (stack S x))\<rparr>
                          \<rbrakk> \<Longrightarrow> P \<turnstile> \<langle>(letin T x e s) | S\<rangle> \<rightarrow>\<^sub>s \<langle>S'\<rangle>"
-      | op_stmt_return: "\<lbrakk> no_exception_or_return S;                         
+      | op_stmt_return: "\<lbrakk> no_exception_or_return S;     
                            P \<turnstile> \<langle>e | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S1\<rangle>; 
                            S' = (if except S1 = None then S1\<lparr>retval := Some v\<rparr> else S1) \<rbrakk> \<Longrightarrow> P \<turnstile> \<langle>(return e) | S\<rangle> \<rightarrow>\<^sub>s \<langle>S'\<rangle>"
       | op_stmt_seq: "\<lbrakk> no_exception_or_return S;
@@ -148,6 +149,77 @@ inductive op_expr :: "prog \<Rightarrow> exp \<Rightarrow> State \<Rightarrow> v
                              else S' = S1 \<rbrakk>
                              \<Longrightarrow> P \<turnstile> \<langle>(trycatch s ch) | S\<rangle> \<rightarrow>\<^sub>s \<langle>S'\<rangle>"
       | op_stmt_exception_or_return: "\<lbrakk> \<not>no_exception_or_return S \<rbrakk> \<Longrightarrow> P \<turnstile> \<langle>s | S\<rangle> \<rightarrow>\<^sub>s \<langle>S\<rangle>" (* skip over the statement *)
+
+lemma exception_or_return_skips:
+  shows "((P \<turnstile> \<langle>e | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S'\<rangle>) \<longrightarrow> (True))
+       \<and> ((P \<turnstile> \<langle>s | S\<rangle> \<rightarrow>\<^sub>s \<langle>S'\<rangle>) \<longrightarrow> (\<not>no_exception_or_return S \<longrightarrow> S = S'))"
+proof (induction S S' rule: op_expr_op_stmt.induct)
+  case (op_expr_ref v S x)
+  then show ?case by simp
+next
+  case (op_expr_new v l S S' cname lbl)
+  then show ?case by simp
+next
+  case (op_expr_calli a S x l obj d m mname s S0 args S1 S' v)
+  then show ?case by simp
+next
+  case (op_expr_calls d m c mname s S0 S lbl args S1 S' v)
+  then show ?case by simp
+next
+  case (op_expr_cast e S v S' hobj t)
+  then show ?case by simp
+next
+  case (op_expr_const k v S)
+  then show ?case by simp
+next
+  case (op_expr_fieldacci a S x l obj v f)
+  then show ?case by simp
+next
+  case (op_expr_fieldaccs classStatics S c v f)
+  then show ?case by simp
+next
+  case (op_expr_wrap e S v S' cbname)
+  then show ?case by simp
+next
+  case (op_stmt_assign S e v S1 S' x)
+  then show ?case by simp
+next
+  case (op_stmt_assignfi S e v S1 a x l obj S' f)
+  then show ?case by simp
+next
+  case (op_stmt_assignfs S e v S1 classStatics c S' f)
+  then show ?case by simp
+next
+  case (op_stmt_expr S e v S')
+  then show ?case by simp
+next
+  case (op_stmt_then S v x s1 S1 s2)
+  then show ?case by simp
+next
+  case (op_stmt_else S v x s2 S2 s1)
+  then show ?case by simp
+next
+  case (op_stmt_letin S e v S1 S2 x s S3 S' T)
+  then show ?case by simp
+next
+  case (op_stmt_return S e v S1 S')
+  then show ?case by simp
+next
+  case (op_stmt_seq S s1 S1 s2 S2)
+  then show ?case by simp
+next
+  case (op_stmt_throw S e v S1 S')
+  then show ?case by simp
+next
+  case (op_stmt_trycatch_ok S s S1 S' catchhandlers)
+  then show ?case by simp
+next
+  case (op_stmt_trycatch_ex S s S1 ex a exObj i ch h var S2 S3 S')
+  then show ?case by simp
+next
+  case (op_stmt_exception_or_return S s)
+  then show ?case by simp
+qed
 
 
 lemma is_value_ok_subsumption:
@@ -975,6 +1047,39 @@ proof -
     using wfp a1 is_expr_value_ok_wrap by metis
 qed
 
+lemma preservation_stmt_assign_base:
+  assumes op: "S' = (if except S1 = None then S1\<lparr>stack := stack S1(x \<mapsto> v)\<rparr> else S1)"
+  assumes hyp: "(P M \<Gamma> \<^bold>\<turnstile> S1) \<and> transition_ok S S1 \<and> is_expr_value_ok P S1 T v"
+  (* If the expression did not throw an exception, the assignment will occur and the final
+     state will be type correct to \<Gamma>(x \<mapsto> T). If an exception did occur, the assignment
+     will not occur and the final state will be type correct to the original \<Gamma>. *)
+  shows "(except S' = None \<longrightarrow> (P M \<Gamma>(x \<mapsto> T) \<^bold>\<turnstile> S')) \<and> 
+         (except S' \<noteq> None \<longrightarrow> (P M \<Gamma> \<^bold>\<turnstile> S')) \<and> transition_ok S S'"
+proof -
+  show ?thesis proof (cases "except S1")
+    case None
+    (* There was no exception evaluating the expression, hence the return value will be 
+       valid and type-correct. *)
+    have "P M \<Gamma> \<^bold>\<turnstile> S1" using hyp by simp
+    moreover have "is_value_ok P (heap S1) (intersect_label T (privs S1)) v" using hyp None unfolding is_expr_value_ok_def by simp 
+    moreover have b1: "S' = S1\<lparr>stack := stack S1(x \<mapsto> v)\<rparr>" using op None by simp
+    ultimately have "P M \<Gamma>(x \<mapsto> T) \<^bold>\<turnstile> S'" using stack_update_ok by metis
+    moreover have "transition_ok S S'"
+    proof -
+      have "transition_ok S1 S'"
+        using b1 transition_ok_simple by simp
+      then show ?thesis using hyp transition_ok_trans by metis
+    qed
+    moreover have "except S' = None" using None op by simp
+    ultimately show ?thesis by metis
+  next
+    (* There was an exception evaluation the expression, no assignment to take place *)
+    case (Some ex)
+    then have "S' = S1" using op by simp
+    then show ?thesis using hyp Some by simp
+  qed
+qed
+
 lemma preservation_stmt_assign:
   assumes op1: "no_exception_or_return S"
   assumes op2: "S' = (if except S1 = None then S1\<lparr>stack := stack S1(x \<mapsto> v)\<rparr> else S1)"
@@ -988,23 +1093,10 @@ proof -
     using wf wf_stmt_assign_intro by blast
   then have a2: "(P M \<Gamma> \<^bold>\<turnstile> S1) \<and> transition_ok S S1 \<and> is_expr_value_ok P S1 T v"
     using corr hyp by blast
-  then show ?thesis proof (cases "except S1")
-    case None
-    (* There was no exception evaluating the expression, hence the return value will be 
-       valid and type-correct. *)
-    have "P M \<Gamma> \<^bold>\<turnstile> S1" using a2 by simp
-    moreover have "\<Gamma> = \<Gamma>(x\<mapsto>T)" using a1 by auto
-    moreover have "is_value_ok P (heap S1) (intersect_label T (privs S1)) v" using a2 None unfolding is_expr_value_ok_def by simp 
-    moreover have b1: "S' = S1\<lparr>stack := stack S1(x \<mapsto> v)\<rparr>" using op2 None by simp
-    ultimately have "P M \<Gamma> \<^bold>\<turnstile> S'" using stack_update_ok by metis
-    moreover have "transition_ok S1 S'" using b1 transition_ok_simple by simp
-    ultimately show ?thesis using a2 transition_ok_trans by metis
-  next
-    (* There was an exception evaluation the expression, no assignment to take place *)
-    case (Some ex)
-    then have "S' = S1" using op2 by simp
-    then show ?thesis using a2 by simp
-  qed
+  moreover have "\<Gamma> = \<Gamma>(x \<mapsto> T)"
+    using a1 by auto
+  ultimately show ?thesis
+    using preservation_stmt_assign_base op2 by metis
 qed
 
 lemma preservation_stmt_assignfi:
@@ -1106,7 +1198,7 @@ lemma stack_variable_restore:
   assumes corr: "P M \<Gamma> \<^bold>\<turnstile> S"
   assumes corr2: "(P M \<Gamma>' \<^bold>\<turnstile> S2)"
   assumes trans: "transition_ok S S2"
-  assumes \<Gamma>': "\<Gamma>' = \<Gamma>(x\<mapsto>T)"
+  assumes \<Gamma>': "\<Gamma>' = \<Gamma>(x := T)"
   assumes op3: "S' = S2\<lparr>stack := (stack S2)(x := (stack S x))\<rparr>"
   shows "(P M \<Gamma> \<^bold>\<turnstile> S') \<and> transition_ok S S'"
 proof - 
@@ -1132,29 +1224,46 @@ qed
 
 lemma preservation_stmt_letin:
   assumes op1: "no_exception_or_return S"
-  assumes op2: "S1 = S\<lparr>stack := stack S(x \<mapsto> v.null)\<rparr>"
-  assumes op3: "S' = S2\<lparr>stack := (stack S2)(x := (stack S x))\<rparr>"
-  assumes op4: "P \<turnstile> \<langle>seq (assign x e) s | S1\<rangle> \<rightarrow>\<^sub>s \<langle>S2\<rangle>" (* unused *)
-  assumes hyp: "\<And>M \<Gamma>. (P M \<Gamma> \<^bold>\<turnstile> S1) \<and> (P M \<Gamma> \<turnstile> seq (assign x e) s \<bullet>) \<longrightarrow> (P M \<Gamma> \<^bold>\<turnstile> S2) \<and> transition_ok S1 S2"
+  assumes op2: "P \<turnstile> \<langle>e | S\<rangle> \<rightarrow>\<^sub>e \<langle>v | S1\<rangle>"
+  assumes op3: "S2 = (if except S1 = None then S1\<lparr>stack := stack S1(x \<mapsto> v)\<rparr> else S1)"
+  assumes op4: "P \<turnstile> \<langle>s | S2\<rangle> \<rightarrow>\<^sub>s \<langle>S3\<rangle>"
+  assumes op5: "S' = S3\<lparr>stack := (stack S3)(x := stack S x)\<rparr>"
+  assumes hype: "\<And>M \<Gamma> T. (P M \<Gamma> \<^bold>\<turnstile> S) \<and> (P M \<Gamma> \<turnstile> e : T) \<longrightarrow> (P M \<Gamma> \<^bold>\<turnstile> S1) \<and> transition_ok S S1 \<and> is_expr_value_ok P S1 T v"
+  assumes hyps: "\<And>M \<Gamma>. (P M \<Gamma> \<^bold>\<turnstile> S2) \<and> (P M \<Gamma> \<turnstile> s \<bullet>) \<longrightarrow> (P M \<Gamma> \<^bold>\<turnstile> S3) \<and> transition_ok S2 S3"
   assumes corr: "P M \<Gamma> \<^bold>\<turnstile> S"
   assumes wf: "P M \<Gamma> \<turnstile> letin T x e s \<bullet>"
   shows "(P M \<Gamma> \<^bold>\<turnstile> S') \<and> transition_ok S S'"
 proof -
-  define \<Gamma>' where "\<Gamma>' = \<Gamma>(x\<mapsto>T)"
-  have a1: "(P M \<Gamma>' \<^bold>\<turnstile> S1)"
-    using corr stack_update_ok \<Gamma>'_def op2 by simp
-  have a2: "(P M \<Gamma>(x := None) \<turnstile> e : T) \<and> (P M \<Gamma>(x\<mapsto>T) \<turnstile> s \<bullet>)"
+  have wfi: "(P M \<Gamma> \<turnstile> e : T) \<and> (P M \<Gamma>(x\<mapsto>T) \<turnstile> s \<bullet>)"
     using wf wf_stmt_letin_intro by simp
-  moreover have "(P M \<Gamma>(x\<mapsto>T) \<turnstile> e : T)"
-    using a2 wf_expr_mono_lenv by (metis fun_upd_upd map_add_subsumed2 upd_None_map_le)
-  ultimately have "(P M \<Gamma>' \<turnstile> (seq (assign x e) s) \<bullet>)"
-    using wf_stmt_assign wf_stmt_seq \<Gamma>'_def by simp
-  then have a3: "(P M \<Gamma>' \<^bold>\<turnstile> S2) \<and> transition_ok S1 S2"
-    using hyp a1 by simp
-  then have a4: "transition_ok S S2"
-    using op2 unfolding transition_ok_def by auto
-  show ?thesis
-    using stack_variable_restore corr a3 \<Gamma>'_def op3 a4 by metis
+  then have "(P M \<Gamma> \<^bold>\<turnstile> S1) \<and> transition_ok S S1 \<and> is_expr_value_ok P S1 T v"
+    using corr hype by blast
+  then have a1: "(except S2 = None \<longrightarrow> (P M \<Gamma>(x \<mapsto> T) \<^bold>\<turnstile> S2)) \<and> 
+             (except S2 \<noteq> None \<longrightarrow> (P M \<Gamma> \<^bold>\<turnstile> S2)) \<and> transition_ok S S2"
+    using preservation_stmt_assign_base op3 by metis
+  then show ?thesis proof (cases "except S2")
+    case None
+    then have "(P M \<Gamma>(x\<mapsto>T) \<^bold>\<turnstile> S2) \<and> transition_ok S S2" 
+      using a1 by simp
+    then have b1: "(P M \<Gamma>(x\<mapsto>T) \<^bold>\<turnstile> S3) \<and> transition_ok S S3"
+      using wfi hyps transition_ok_trans by metis
+    then show "(P M \<Gamma> \<^bold>\<turnstile> S') \<and> transition_ok S S'"
+      using stack_variable_restore corr op5 by metis
+  next
+    case (Some ex) (* if there was an exception evaluating the expression, and the assignment
+                      does not go through, show that the statement is not executed in a
+                      type-incorrect state (i.e. the body is skipped.) *)
+    then have "(P M \<Gamma> \<^bold>\<turnstile> S2) \<and> transition_ok S S2" 
+      using a1 by simp
+    moreover have "S2 = S3"
+      using exception_or_return_skips Some op4 unfolding no_exception_or_return_def by simp
+    ultimately have "(P M \<Gamma> \<^bold>\<turnstile> S3) \<and> transition_ok S S3" 
+      by simp
+    moreover have "\<Gamma> = \<Gamma>(x := \<Gamma>\<lbrakk>x\<rbrakk>\<^sub>v)" 
+      by simp
+    ultimately show "(P M \<Gamma> \<^bold>\<turnstile> S') \<and> transition_ok S S'"
+      using stack_variable_restore corr op5 by metis
+  qed
 qed
 
 lemma preservation_stmt_return:
@@ -1385,7 +1494,7 @@ next
   case (op_stmt_else S v x s2 S2 s1)
   then show ?case using wf_stmt_ifelse_intro by blast
 next  
-  case (op_stmt_letin S S1 x e s S2 S' T)
+  case (op_stmt_letin S e v S1 S2 x s S3 S' T)
   then show ?case using preservation_stmt_letin by blast
 next
   case (op_stmt_return S e v S1 S')
